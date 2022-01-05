@@ -8,7 +8,7 @@ import './admin.sol';
 /**
  * @dev Main BorrowingLending contract
  */
-contract BorrowingLending is Borrowing, Lending, Liquidation, Admin {
+contract BorrowingLending is BorrowingContract, LendingContract, LiquidationContract, AdminContract {
     /**
      * Error messages:
      * borrowing-lending.sol

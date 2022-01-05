@@ -6,7 +6,7 @@ import './marketing-indexes.sol';
  * @dev Implementation of the lending treating functional,
  * functions names are self explanatory
  */
-contract Lending is MarketingIndexes {
+contract LendingContract is MarketingIndexesContract {
     function lend (
         uint256 borrowingProfileIndex, uint256 amount
     ) external returns (bool) {

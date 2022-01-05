@@ -6,7 +6,7 @@ import './utils.sol';
  * @dev Storage functional for a BorrowingLending contract,
  * functions names are self explanatory
  */
-contract Storage is Utils {
+contract StorageContract is UtilsContract {
     event BorrowingLiquidation (
         address indexed userAddress, address indexed liquidatorAddress,
         uint256 borrowingIndex, uint256 timestamp

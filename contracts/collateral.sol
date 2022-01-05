@@ -7,7 +7,7 @@ import './borrowing-fee.sol';
  * @dev Implementation of the collateral treating functional,
  * functions names are self explanatory
  */
-contract Collateral is Storage, BorrowingFee {
+contract CollateralContract is StorageContract, BorrowingFeeContract {
     function depositCollateral (
         uint256 collateralProfileIndex, uint256 amount
     ) external payable returns (bool) {

@@ -6,7 +6,7 @@ import './collateral.sol';
  * @dev Implementation of the liquidation functional,
  * functions names are self explanatory
  */
-contract Liquidation is Collateral {
+contract LiquidationContract is CollateralContract {
     /**
      * @dev user should be flagged for a liquidation
      * before actual liquidation can be proceeded

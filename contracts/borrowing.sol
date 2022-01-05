@@ -6,7 +6,7 @@ import './collateral.sol';
 /**
  * @dev Borrowing functional implementation
  */
-contract Borrowing is MarketingIndexes, Collateral {
+contract BorrowingContract is MarketingIndexesContract, CollateralContract {
     /**
      * @dev Borrowing of the specified amount of assets defined by the borrowing profile
      */

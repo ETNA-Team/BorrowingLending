@@ -6,7 +6,7 @@ import './storage.sol';
  * @dev Implementation of the marketing indexes calculation
  * in order to calculate fees and yield with dynamically changed APR
  */
-contract MarketingIndexes is Storage {
+contract MarketingIndexesContract is StorageContract {
     function _proceedMarketingIndexes (
         uint256 borrowingProfileIndex
     ) internal returns (bool) {

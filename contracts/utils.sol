@@ -89,7 +89,7 @@ abstract contract ReentrancyGuard {
 /**
  * @dev Contract utils implement helper functions for the assets transfer
  */
-contract Utils is ReentrancyGuard {
+contract UtilsContract is ReentrancyGuard {
     /**
      * @dev helper function to get paid in Erc20 tokens
      */

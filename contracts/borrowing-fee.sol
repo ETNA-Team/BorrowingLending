@@ -6,7 +6,7 @@ import './marketing-indexes.sol';
  * @dev Functions for the borrowing fee treating and helper functions
  * used in both Borrowing and Collateral contracts
  */
-contract BorrowingFee is MarketingIndexes {
+contract BorrowingFeeContract is MarketingIndexesContract {
     /**
      * @dev External getter of the borrowing fee
      */

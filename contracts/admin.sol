@@ -5,7 +5,7 @@ import './storage.sol';
 /**
  * @dev Specific functions for administrator.
  */
-contract Admin is Storage {
+contract AdminContract is StorageContract {
     /**
      * @dev Function for withdrawing assets, both native currency and erc20 tokens.
      */
