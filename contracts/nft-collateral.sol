@@ -412,9 +412,9 @@ contract NftCollateral is IERC721Receiver {
         uint256 amount,
         uint256 tokensNumber
     ) {
-        uint256 depositIndex = _usersDepositIndex[userAddress];
+        uint256 _depositIndex = _usersDepositIndex[userAddress];
         return (
-            depositIndex,
+            _depositIndex,
             _deposits[depositIndex].amount,
             _deposits[depositIndex].tokensNumber
         );
