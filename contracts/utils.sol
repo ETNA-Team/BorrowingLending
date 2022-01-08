@@ -99,7 +99,7 @@ contract UtilsContract is ReentrancyGuard {
         require(tokenAddress != address(0), '81');
         IERC20 tokenContract = IERC20(tokenAddress);
 
-        tokenContract.transferFrom(fromAddress, address(this), amount);
+        require(tokenContract.transferFrom(fromAddress, address(this), amount));
 
         return true;
     }
@@ -115,7 +115,7 @@ contract UtilsContract is ReentrancyGuard {
             payable(toAddress).transfer(amount);
         } else {
             IERC20 tokenContract = IERC20(tokenAddress);
-            tokenContract.transfer(toAddress, amount);
+            require(tokenContract.transfer(toAddress, amount));
         }
         return true;
     }
