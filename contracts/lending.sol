@@ -10,10 +10,7 @@ contract LendingContract is MarketingIndexesContract {
     function lend (
         uint256 borrowingProfileIndex, uint256 amount
     ) external returns (bool) {
-        require(_liquidationTime[msg.sender] == 0,
-            '41');
-        require(borrowingProfileIndex > 0 && borrowingProfileIndex <= _borrowingProfilesNumber,
-            '42');
+        _checkLending(borrowingProfileIndex);
         if (!_isUser[msg.sender]) {
             _totalUsers ++;
             _isUser[msg.sender] = true;
@@ -37,13 +34,8 @@ contract LendingContract is MarketingIndexesContract {
         } else {
             uint256 lendingIndex = _usersLendingIndexes[msg.sender][borrowingProfileIndex];
             _updateLendingYield(lendingIndex);
-            _lendings[lendingIndex].amount += amount;
-            if (_lendings[lendingIndex].unlock > block.timestamp){
-                _lendings[lendingIndex].unlock = block.timestamp + _lockTime;
-            }
-            _lendings[lendingIndex].lastMarketIndex = _borrowingProfiles
-                [borrowingProfileIndex].lendingMarketIndex;
-            _lendings[lendingIndex].updatedAt = block.timestamp;
+
+            _addToLending(lendingIndex, borrowingProfileIndex, amount);
         }
         _borrowingProfiles[borrowingProfileIndex].totalLent += amount;
 
@@ -56,11 +48,28 @@ contract LendingContract is MarketingIndexesContract {
         return true;
     }
 
+    /**
+     * @dev Lend accumulated yield to the contract
+     */
+    function compound (uint256 borrowingProfileIndex) external returns (bool) {
+        _checkLending(borrowingProfileIndex);
+        uint256 lendingIndex = _usersLendingIndexes[msg.sender][borrowingProfileIndex];
+        require(lendingIndex > 0, '44');
+        _updateLendingYield(lendingIndex);
+
+        uint256 yield = _lendings[lendingIndex].accumulatedYield;
+        _lendings[lendingIndex].accumulatedYield = 0;
+
+        _addToLending(lendingIndex, borrowingProfileIndex, yield);
+
+        _borrowingProfiles[borrowingProfileIndex].totalLent += yield;
+        return true;
+    }
+
     function withdrawLending (
         uint256 borrowingProfileIndex, uint256 amount
     ) external returns (bool) {
-        require(_liquidationTime[msg.sender] == 0,
-            '43');
+        _checkLending(borrowingProfileIndex);
         uint256 lendingIndex = _usersLendingIndexes[msg.sender][borrowingProfileIndex];
         require(lendingIndex > 0, '44');
 
@@ -105,6 +114,31 @@ contract LendingContract is MarketingIndexesContract {
             amount
         );
 
+        return true;
+    }
+
+    function _addToLending (
+        uint256 lendingIndex,
+        uint256 borrowingProfileIndex,
+        uint256 amount
+    ) internal returns (bool) {
+        _lendings[lendingIndex].amount += amount;
+        if (_lendings[lendingIndex].unlock > block.timestamp){
+            _lendings[lendingIndex].unlock = block.timestamp + _lockTime;
+        }
+        _lendings[lendingIndex].lastMarketIndex = _borrowingProfiles
+            [borrowingProfileIndex].lendingMarketIndex;
+        _lendings[lendingIndex].updatedAt = block.timestamp;
+        return true;
+    }
+
+    function _checkLending (
+        uint256 borrowingProfileIndex
+    ) internal view returns (bool) {
+        require(_liquidationTime[msg.sender] == 0,
+            '41');
+        require(borrowingProfileIndex > 0 && borrowingProfileIndex <= _borrowingProfilesNumber,
+            '42');
         return true;
     }
 

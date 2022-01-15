@@ -67,22 +67,26 @@ interface IERC721Receiver {
 }
 
 /**
- * @dev Implementation of using Cyclops NFTs as a collateral,
- * functions names are self explanatory
+ * @dev Implementation of using Cyclops NFTs as a collateral in the BorrowingLending contract,
+ * function names are self explanatory
  */
 contract NftCollateral is IERC721Receiver {
     modifier onlyOwner() {
-        require(msg.sender == _owner, 'caller is not the owner');
+        require(msg.sender == _owner, 'Caller is not the owner');
+        _;
+    }
+    modifier onlyManager() {
+        require(_managers[msg.sender], 'Caller is not the manager');
         _;
     }
     modifier onlyBorrowingLendingContract() {
         require(msg.sender == address(_borrowingLendingContract),
-            'caller is not the borrowing lending contract');
+            'Caller is not the borrowing lending contract');
         _;
     }
     modifier onlyLiquidationManager() {
         require(msg.sender == _borrowingLendingContract.getLiquidationManager(),
-            'caller is not the liquidation manager');
+            'Caller is not the liquidation manager');
         _;
     }
     struct Deposit {
@@ -101,6 +105,7 @@ contract NftCollateral is IERC721Receiver {
     mapping (address => uint256) internal _atLiquidationIndex;
     mapping (uint256 => address) internal _atLiquidation;
     // After nft collateral liquidation, before liquidated nft collateral withdrawal
+    mapping (address => bool) internal _managers;
 
     uint256 internal _atLiquidationNumber;
     uint256 internal _depositsNumber;
@@ -138,6 +143,7 @@ contract NftCollateral is IERC721Receiver {
             .getCollateralProfile(nEtnaProfileIndex);
         require(collateralType == 3, 'Wrong NETNA collateral profile index');
         _owner = newOwner;
+        _managers[newOwner] = true;
         _nEtnaProfileIndex = nEtnaProfileIndex;
     }
 
@@ -262,46 +268,17 @@ contract NftCollateral is IERC721Receiver {
         return true;
     }
 
-    function setBatchLimit (
-        uint256 batchLimit
+    function addToManagers (
+        address userAddress
     ) external onlyOwner returns (bool) {
-        require(batchLimit > 0, 'Batch limit should be greater than zero');
-        _batchLimit = batchLimit;
-
+        _managers[userAddress] = true;
         return true;
     }
 
-    function setNEtnaContract (
-        address tokenAddress
+    function removeFromManagers (
+        address userAddress
     ) external onlyOwner returns (bool) {
-        require(tokenAddress != address(0), 'Token address can not be zero');
-        _nEtnaContract = IERC20(tokenAddress);
-        return true;
-    }
-
-    function setMarketplaceContract (
-        address tokenAddress
-    ) external onlyOwner returns (bool) {
-        require(tokenAddress != address(0), 'Token address can not be zero');
-        _marketplaceContract = IMarketplace(tokenAddress);
-        return true;
-    }
-
-    function setNftContract (
-        address tokenAddress
-    ) external onlyOwner returns (bool) {
-        require(tokenAddress != address(0), 'Token address can not be zero');
-        _nftContract = INFT(tokenAddress);
-        return true;
-    }
-
-    function setNEtnaProfileIndex (
-        uint256 nEtnaProfileIndex
-    ) external onlyOwner returns (bool) {
-        (,,,,,uint8 collateralType,) = _borrowingLendingContract
-        .getCollateralProfile(nEtnaProfileIndex);
-        require(collateralType == 3, 'Wrong NETNA collateral profile index');
-        _nEtnaProfileIndex = nEtnaProfileIndex;
+        _managers[userAddress] = false;
         return true;
     }
 
@@ -316,9 +293,60 @@ contract NftCollateral is IERC721Receiver {
         return true;
     }
 
+    function setBatchLimit (
+        uint256 batchLimit
+    ) external onlyManager returns (bool) {
+        require(batchLimit > 0, 'Batch limit should be greater than zero');
+        _batchLimit = batchLimit;
+
+        return true;
+    }
+
+    function setBorrowingLendingContract (
+        address contractAddress
+    ) external onlyManager returns (bool) {
+        require(contractAddress != address(0), 'Contract address can not be zero');
+        _borrowingLendingContract = IBorrowingLending(contractAddress);
+        return true;
+    }
+
+    function setNEtnaContract (
+        address tokenAddress
+    ) external onlyManager returns (bool) {
+        require(tokenAddress != address(0), 'Token address can not be zero');
+        _nEtnaContract = IERC20(tokenAddress);
+        return true;
+    }
+
+    function setMarketplaceContract (
+        address tokenAddress
+    ) external onlyManager returns (bool) {
+        require(tokenAddress != address(0), 'Token address can not be zero');
+        _marketplaceContract = IMarketplace(tokenAddress);
+        return true;
+    }
+
+    function setNftContract (
+        address tokenAddress
+    ) external onlyManager returns (bool) {
+        require(tokenAddress != address(0), 'Token address can not be zero');
+        _nftContract = INFT(tokenAddress);
+        return true;
+    }
+
+    function setNEtnaProfileIndex (
+        uint256 nEtnaProfileIndex
+    ) external onlyManager returns (bool) {
+        (,,,,,uint8 collateralType,) = _borrowingLendingContract
+        .getCollateralProfile(nEtnaProfileIndex);
+        require(collateralType == 3, 'Wrong NETNA collateral profile index');
+        _nEtnaProfileIndex = nEtnaProfileIndex;
+        return true;
+    }
+
     function adminWithdrawNft (
         uint256[] memory tokenIds
-    ) external onlyOwner returns (bool) {
+    ) external onlyManager returns (bool) {
         for (uint256 i; i < tokenIds.length; i ++) {
             try _nftContract.safeTransferFrom(address(this), msg.sender, tokenIds[i]) {} catch {}
         }
@@ -445,6 +473,10 @@ contract NftCollateral is IERC721Receiver {
         address userAddress, uint256 index
     ) external view returns (uint256) {
         return _userTokenRegistry[userAddress][index];
+    }
+
+    function getBorrowingLendingContract () external view returns (address) {
+        return address(_borrowingLendingContract);
     }
 
     function getNEtnaContract () external view returns (address) {

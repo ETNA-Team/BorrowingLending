@@ -172,7 +172,7 @@ contract CollateralContract is StorageContract, BorrowingFeeContract {
         ) return 0;
         uint256 collateralProfileIndex = _collaterals[collateralIndex].collateralProfileIndex;
         return _collaterals[collateralIndex].amount
-        * _collateralProfiles[collateralProfileIndex].usdRate;
+            * _collateralProfiles[collateralProfileIndex].usdRate;
     }
 
     function getDepositedCollateralUsdAmount (
@@ -205,8 +205,8 @@ contract CollateralContract is StorageContract, BorrowingFeeContract {
             ) continue;
             if (collateralIndex == 0) continue;
             uint256 amount = _collaterals[collateralIndex].amount
-            * _collateralProfiles[i].usdRate * _collateralProfiles[i].borrowingFactor
-            / _percentShift;
+                * _collateralProfiles[i].usdRate * _collateralProfiles[i].borrowingFactor
+                / _percentShift;
             collateralUsdAmount += amount;
             if (i == collateralProfileIndex) availableCollateralUsdAmount = amount;
         }
@@ -217,8 +217,8 @@ contract CollateralContract is StorageContract, BorrowingFeeContract {
         if (availableCollateralUsdAmount > diff) availableCollateralUsdAmount = diff;
 
         return availableCollateralUsdAmount
-        * _percentShift
-        / _collateralProfiles[collateralProfileIndex].usdRate
-        / _collateralProfiles[collateralProfileIndex].borrowingFactor;
+            * _percentShift
+            / _collateralProfiles[collateralProfileIndex].usdRate
+            / _collateralProfiles[collateralProfileIndex].borrowingFactor;
     }
 }

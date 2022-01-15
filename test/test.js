@@ -150,7 +150,7 @@ beforeEach(async function () {
 
   await blContract.connect(signers[10]).addToManagers(signers[9].address);
   await expect(
-    blContract.connect(signers[10]).addBorrowingProfile(borrowing1Contract.address, 100)
+    blContract.connect(signers[0]).addBorrowingProfile(borrowing1Contract.address, 100)
   ).to.be.revertedWith('63');
   const borrowing1ProfileUsdRate = 10000;
   const borrowing2ProfileUsdRate = 10000;
@@ -506,10 +506,33 @@ describe("Testing contract", function () {
     expect(roundTo(Number(ethers.utils.formatUnits(result.accumulatedYield)), 3)).to.equal(
       roundTo(lending322ExpectedYield * 0.8, 3)
     );
-    result = await blContract.getLendingYield(3, true);
-    expect(roundTo(Number(ethers.utils.formatUnits(result)), 3)).to.equal(
+    result = Number(ethers.utils.formatUnits(
+      await blContract.getLendingYield(3, true)
+    ));
+    expect(roundTo(result, 3)).to.equal(
       roundTo(lending322ExpectedYield * 0.8, 3)
     );
+    const l3Yield = result;
+    result = await blContract.getLending(3);
+    const l3amount = Number(ethers.utils.formatUnits(
+      result.amount
+    ));
+    await blContract.connect(signers[0]).compound(2);
+    result = await blContract.getLending(3);
+    expect(roundTo(Number(ethers.utils.formatUnits(
+      result.amount
+    )), 4)).to.equal(roundTo(l3amount + l3Yield, 4));
+
+    expect(roundTo(Number(ethers.utils.formatUnits(
+      result.accumulatedYield
+    )), 4)).to.equal(0);
+
+    result = Number(ethers.utils.formatUnits(
+      await blContract.getLendingYield(3, true)
+    ));
+
+    expect(roundTo(result, 4)).to.equal(0);
+
     result = await blContract.getTotalUsers();
     expect(result).to.equal(3);
   });
@@ -2534,8 +2557,8 @@ describe("Testing contract", function () {
     ).to.be.revertedWith('Sender is at liquidation');
     await expect(
       nftCollateralContract.connect(signers[0])
-      .withdrawLiquidatedCollateral(signers[1].address, [4,5,7])
-    ).to.be.revertedWith('caller is not the liquidation manager');
+        .withdrawLiquidatedCollateral(signers[1].address, [4,5,7])
+    ).to.be.revertedWith('Caller is not the liquidation manager');
     await expect(
       nftCollateralContract.connect(signers[7])
       .withdrawLiquidatedCollateral(signers[0].address, [4,5,7])
@@ -2830,6 +2853,29 @@ describe("Testing contract", function () {
       .setNEtnaContract(etnaContract.address);
     result = await blContract.getNEtnaContract();
     expect(result).to.equal(etnaContract.address);
+
+    await expect(
+      nftCollateralContract.connect(signers[9])
+        .setNEtnaContract(signers[10].address)
+    ).to.be.revertedWith('Caller is not the manager');
+    await nftCollateralContract.connect(signers[10])
+      .addToManagers(signers[9].address);
+    await nftCollateralContract.connect(signers[9])
+      .setNEtnaContract(signers[10].address);
+    result = await nftCollateralContract.getNEtnaContract();
+    expect(result).to.equal(signers[10].address);
+    await nftCollateralContract.connect(signers[9])
+      .setBorrowingLendingContract(signers[10].address);
+    result = await nftCollateralContract.getBorrowingLendingContract();
+    expect(result).to.equal(signers[10].address);
+    await nftCollateralContract.connect(signers[9])
+      .setMarketplaceContract(signers[10].address);
+    result = await nftCollateralContract.getMarketplaceContract();
+    expect(result).to.equal(signers[10].address);
+    await nftCollateralContract.connect(signers[9])
+      .setNftContract(signers[10].address);
+    result = await nftCollateralContract.getNftContract();
+    expect(result).to.equal(signers[10].address);
   });
 
   it("Admin withdraw/replenish", async function () {

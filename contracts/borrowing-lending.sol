@@ -107,6 +107,7 @@ contract BorrowingLending is BorrowingContract, LendingContract, LiquidationCont
         require(aprLendingMax >= aprLendingMin, '3');
 
         _owner = newOwner;
+        _managers[newOwner] = true;
         _liquidationManager = newOwner;
         _etnaContract = IERC20(etnaContractAddress);
         _aprBorrowingMin = aprBorrowingMin;
