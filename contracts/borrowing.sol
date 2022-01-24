@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.0;
+import 'hardhat/console.sol';
 import './marketing-indexes.sol';
 import './collateral.sol';
 
@@ -97,24 +98,33 @@ contract BorrowingContract is MarketingIndexesContract, CollateralContract {
     ) external returns (bool) {
         require(borrowingIndex > 0 && borrowingIndex
             <= _borrowingsNumber, '13');
-        require(_borrowings[borrowingIndex].amount >= amount,
-            '14');
+        require(_borrowings[borrowingIndex].userAddress == msg.sender,
+            '16.1');
+        uint256 borrowingProfileIndex = _borrowings[borrowingIndex].borrowingProfileIndex;
+        _proceedMarketingIndexes(borrowingProfileIndex);
+        _updateBorrowingFee(borrowingIndex);
+        require(
+            _borrowings[borrowingIndex].amount
+                + _borrowings[borrowingIndex].accumulatedFee >= amount,
+            '14'
+        );
         require(!_borrowings[borrowingIndex].liquidated,
             '15');
-        uint256 borrowingProfileIndex = _borrowings[borrowingIndex].borrowingProfileIndex;
-        require(_borrowingProfiles[borrowingProfileIndex].active,
-            '16');
-
-        _proceedMarketingIndexes(borrowingProfileIndex);
+        require(_borrowingProfiles[borrowingProfileIndex].active, '16');
         _takeAsset(
             _borrowingProfiles[borrowingProfileIndex].contractAddress,
             msg.sender,
             amount
         );
 
-        _updateBorrowingFee(borrowingIndex);
-        _borrowingProfiles[borrowingProfileIndex].totalBorrowed -= amount;
-        _borrowings[borrowingIndex].amount -= amount;
+        if (amount <= _borrowings[borrowingIndex].accumulatedFee) {
+            _borrowings[borrowingIndex].accumulatedFee -= amount;
+        } else {
+            amount -= _borrowings[borrowingIndex].accumulatedFee;
+            _borrowings[borrowingIndex].accumulatedFee = 0;
+            _borrowingProfiles[borrowingProfileIndex].totalBorrowed -= amount;
+            _borrowings[borrowingIndex].amount -= amount;
+        }
 
         if (
             _liquidationTime[msg.sender] > 0 && !userLiquidation(msg.sender, true)

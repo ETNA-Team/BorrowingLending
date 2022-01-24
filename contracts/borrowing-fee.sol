@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.0;
+import 'hardhat/console.sol';
 import './marketing-indexes.sol';
 
 /**
@@ -90,7 +91,6 @@ contract BorrowingFeeContract is MarketingIndexesContract {
     function _getDynamicFee (
         uint256 borrowingIndex
     ) internal view returns (uint256) {
-        if (_borrowings[borrowingIndex].liquidated) return 0;
         uint256 profileIndex = _borrowings[borrowingIndex].borrowingProfileIndex;
         uint256 marketIndex = _borrowingProfiles[profileIndex].borrowingMarketIndex;
         uint256 extraPeriodStartTime =
@@ -143,8 +143,8 @@ contract BorrowingFeeContract is MarketingIndexesContract {
         uint256 borrowingProfileIndex = _borrowings[borrowingIndex].borrowingProfileIndex;
 
         return (
-        _borrowings[borrowingIndex].amount + _borrowings[borrowingIndex].accumulatedFee
-        + _getBorrowingFee(borrowingIndex)
+            _borrowings[borrowingIndex].amount + _borrowings[borrowingIndex].accumulatedFee
+                + _getBorrowingFee(borrowingIndex)
         ) * _borrowingProfiles[borrowingProfileIndex].usdRate;
     }
 
@@ -166,7 +166,7 @@ contract BorrowingFeeContract is MarketingIndexesContract {
             uint256 factor = _percentShift + _collateralProfiles[i].liquidationFactor;
             if (margin) factor += _liquidationFlagMargin;
             collateralLiquidationUsdAmount += _collaterals[collateralIndex].amount
-            * _collateralProfiles[i].usdRate * _percentShift / factor;
+                * _collateralProfiles[i].usdRate * _percentShift / factor;
         }
 
         return collateralLiquidationUsdAmount <= borrowedUsdAmount;

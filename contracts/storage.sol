@@ -169,12 +169,15 @@ contract StorageContract is UtilsContract {
         return true;
     }
 
-    function setBorrowingProfileRate (
-        uint256 borrowingProfileIndex, uint256 usdRate
+    function setBorrowingProfileData (
+        uint256 borrowingProfileIndex,
+        uint256 usdRate,
+        bool active
     ) external onlyManager returns (bool) {
         require(borrowingProfileIndex > 0 && borrowingProfileIndex <= _borrowingProfilesNumber,
             '65');
         _borrowingProfiles[borrowingProfileIndex].usdRate = usdRate;
+        _borrowingProfiles[borrowingProfileIndex].active = active;
         return true;
     }
 
@@ -203,54 +206,19 @@ contract StorageContract is UtilsContract {
         return true;
     }
 
-    /**
-     * @dev Helper function that allows manager to change status manually
-     */
-    function setBorrowingProfileStatus (
-        uint256 borrowingProfileIndex, bool active
-    ) external onlyManager returns (bool) {
-        require(borrowingProfileIndex > 0 && borrowingProfileIndex <= _borrowingProfilesNumber,
-            '68');
-        _borrowingProfiles[borrowingProfileIndex].active = active;
-        return true;
-    }
-
-    function setCollateralProfileRate (
-        uint256 collateralProfileIndex, uint256 usdRate
+    function setCollateralProfileData (
+        uint256 collateralProfileIndex,
+        uint256 usdRate,
+        uint256 borrowingFactor,
+        uint256 liquidationFactor,
+        bool active
     ) external onlyManager returns (bool) {
         require(collateralProfileIndex > 0 && collateralProfileIndex <= _collateralProfilesNumber,
             '69');
         _collateralProfiles[collateralProfileIndex].usdRate = usdRate;
-        return true;
-    }
-
-    /**
-     * @dev Helper function that allows manager to change status manually
-     */
-    function setCollateralProfileStatus (
-        uint256 collateralProfileIndex, bool active
-    ) external onlyManager returns (bool) {
-        require(collateralProfileIndex > 0 && collateralProfileIndex <= _collateralProfilesNumber,
-            '70');
-        _collateralProfiles[collateralProfileIndex].active = active;
-        return true;
-    }
-
-    function setCollateralProfileBorrowingFactor (
-        uint256 collateralProfileIndex, uint256 borrowingFactor
-    ) external onlyManager returns (bool) {
-        require(collateralProfileIndex > 0 && collateralProfileIndex <= _collateralProfilesNumber,
-            '71');
         _collateralProfiles[collateralProfileIndex].borrowingFactor = borrowingFactor;
-        return true;
-    }
-
-    function setCollateralProfileLiquidationFactor (
-        uint256 collateralProfileIndex, uint256 liquidationFactor
-    ) external onlyManager returns (bool) {
-        require(collateralProfileIndex > 0 && collateralProfileIndex <= _collateralProfilesNumber,
-            '72');
         _collateralProfiles[collateralProfileIndex].liquidationFactor = liquidationFactor;
+        _collateralProfiles[collateralProfileIndex].active = active;
         return true;
     }
 
@@ -276,30 +244,15 @@ contract StorageContract is UtilsContract {
         return true;
     }
 
-    function setLiquidationFee (
-        uint256 liquidationFee
-    ) external onlyManager returns (bool) {
-        _liquidationFee = liquidationFee;
-        return true;
-    }
-
-    function setLiquidatorPercentage (
-        uint256 liquidatorPercentage
-    ) external onlyManager returns (bool) {
-        _liquidatorPercentage = liquidatorPercentage;
-        return true;
-    }
-
-    function setLiquidationFlagMargin (
-        uint256 liquidationFlagMargin
-    ) external onlyManager returns (bool) {
-        _liquidationFlagMargin = liquidationFlagMargin;
-        return true;
-    }
-
-    function setLiquidationPeriod (
+    function setLiquidationData (
+        uint256 liquidationFee,
+        uint256 liquidatorPercentage,
+        uint256 liquidationFlagMargin,
         uint256 liquidationPeriod
     ) external onlyManager returns (bool) {
+        _liquidationFee = liquidationFee;
+        _liquidatorPercentage = liquidatorPercentage;
+        _liquidationFlagMargin = liquidationFlagMargin;
         _liquidationPeriod = liquidationPeriod;
         return true;
     }
@@ -338,6 +291,7 @@ contract StorageContract is UtilsContract {
         _noFee[collateralType] = noFee;
         return true;
     }
+
     function addToLiquidators (
         address userAddress
     ) external onlyOwner returns (bool) {
@@ -590,7 +544,7 @@ contract StorageContract is UtilsContract {
         return _liquidators[userAddress];
     }
 
-    function liquidationTime (
+    function getUserLiquidationTime (
         address userAddress
     ) external view returns (uint256) {
         return _liquidationTime[userAddress];

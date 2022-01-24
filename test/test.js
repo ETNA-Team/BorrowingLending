@@ -11,6 +11,21 @@ let signers, tokensArray, etnaContract, nEtnaContract, collateralContract, marke
   nftContract, borrowing1Contract, borrowing2Contract, nftCollateralContract, blContract,
   result;
 
+const borrowing1ProfileUsdRate = 10000;
+const borrowing2ProfileUsdRate = 10000;
+const collateral1ProfileUsdRate = 5000;
+const collateral1ProfileBorrowingFactor = 2500;
+const collateral1ProfileLiquidationFactor = 2500;
+const collateral2ProfileUsdRate = 2000;
+const collateral2ProfileBorrowingFactor = 1500;
+const collateral2ProfileLiquidationFactor = 2000;
+const collateral3ProfileUsdRate = 6000000;
+const collateral3ProfileBorrowingFactor = 5000;
+const collateral3ProfileLiquidationFactor = 1500;
+const collateral4ProfileUsdRate = 2000;
+const collateral4ProfileBorrowingFactor = 1500;
+const collateral4ProfileLiquidationFactor = 2000;
+
 beforeEach(async function () {
   signers = await ethers.getSigners();
 
@@ -152,20 +167,7 @@ beforeEach(async function () {
   await expect(
     blContract.connect(signers[0]).addBorrowingProfile(borrowing1Contract.address, 100)
   ).to.be.revertedWith('63');
-  const borrowing1ProfileUsdRate = 10000;
-  const borrowing2ProfileUsdRate = 10000;
-  const collateral1ProfileUsdRate = 5000;
-  const collateral1ProfileBorrowingFactor = 2500;
-  const collateral1ProfileLiquidationFactor = 2500;
-  const collateral2ProfileUsdRate = 2000;
-  const collateral2ProfileBorrowingFactor = 1500;
-  const collateral2ProfileLiquidationFactor = 2000;
-  const collateral3ProfileUsdRate = 6000000;
-  const collateral3ProfileBorrowingFactor = 5000;
-  const collateral3ProfileLiquidationFactor = 1500;
-  const collateral4ProfileUsdRate = 2000;
-  const collateral4ProfileBorrowingFactor = 1500;
-  const collateral4ProfileLiquidationFactor = 2000;
+
   await blContract.connect(signers[9])
     .addBorrowingProfile(borrowing1Contract.address, borrowing1ProfileUsdRate);
   await blContract.connect(signers[9])
@@ -635,10 +637,13 @@ describe("Testing contract", function () {
     await blContract.connect(signers[1])
       .returnBorrowing(1, ethers.utils.parseUnits(toBeReturned.toString()));
     result = await blContract.getBorrowing(1);
-    expect(Number(ethers.utils.formatUnits(result.amount))).to
-      .equal(borrowingAmount - toBeReturned);
-    expect(roundTo(Number(ethers.utils.formatUnits(result.accumulatedFee)), 4)).to
-      .equal(roundTo(expectedBorrowingFee, 4));
+    expect(roundTo(Number(ethers.utils.formatUnits(
+      result.amount
+    )), 4)).to.equal(roundTo(
+      borrowingAmount - toBeReturned + expectedBorrowingFee, 4
+    ));
+    expect(roundTo(Number(ethers.utils.formatUnits(result.accumulatedFee)), 8)).to
+      .equal(0);
 
     result = await collateralContract.balanceOf(signers[1].address);
     expect(Number(ethers.utils.formatUnits(result))).to
@@ -1043,14 +1048,33 @@ describe("Testing contract", function () {
       / (borrowing1Apr * borrowing1Amount)
     );
 
-    await blContract.connect(signers[9]).setCollateralProfileRate(1, collateral1MarginRate + 1);
+    await blContract.connect(signers[9]).setCollateralProfileData(
+      1,
+      collateral1MarginRate + 1,
+      collateral1ProfileBorrowingFactor,
+      collateral1ProfileLiquidationFactor,
+      true
+    );
+
     result = await blContract.userLiquidation(signers[1].address, false);
     expect(result).to.be.false;
-    await blContract.connect(signers[9]).setCollateralProfileRate(1, collateral1MarginRate);
+    await blContract.connect(signers[9]).setCollateralProfileData(
+      1,
+      collateral1MarginRate,
+      collateral1ProfileBorrowingFactor,
+      collateral1ProfileLiquidationFactor,
+      true
+    );
     result = await blContract.userLiquidation(signers[1].address, false);
     expect(result).to.be.true;
 
-    await blContract.connect(signers[9]).setCollateralProfileRate(1, collateral1PreMarginRate);
+    await blContract.connect(signers[9]).setCollateralProfileData(
+      1,
+      collateral1PreMarginRate,
+      collateral1ProfileBorrowingFactor,
+      collateral1ProfileLiquidationFactor,
+      true
+    );
 
     await hre.timeAndMine.increaseTime(`${preMarginPeriodInDays} days`);
 
@@ -1217,15 +1241,15 @@ describe("Testing contract", function () {
       .borrow(1, ethers.utils.parseUnits(borrowing1Amount.toString()), false);
 
     await hre.timeAndMine.increaseTime('100 days');
-
     await signers[0].sendTransaction({
       to: signers[1].address,
       value: 0
     });
 
-    const borrowedUsdAmount1 = Number(ethers.utils.formatUnits(
+    let borrowedUsdAmountS1 = Number(ethers.utils.formatUnits(
       await blContract.getBorrowedUsdAmount(signers[1].address), 22
     ));
+
     result = await blContract.getCollateralProfile(1);
     const collateral1UsdRate = Number(result.usdRate) / 10000;
     const collateral1LiquidationFactor = Number(result.liquidationFactor) / 10000;
@@ -1235,51 +1259,51 @@ describe("Testing contract", function () {
     const collateral1UsdAmount = Number(ethers.utils.formatUnits(
       await blContract.getCollateralUsdAmount(1), 22
     ));
+
     const marginBorrowingUsdAmount =
       collateral1UsdAmount / (1 + collateral1LiquidationFactor);
-    const marginBorrowingUsdRate = marginBorrowingUsdAmount / borrowedUsdAmount1;
+    const marginBorrowingUsdRate = marginBorrowingUsdAmount / borrowedUsdAmountS1;
 
-    await blContract.connect(signers[9]).setBorrowingProfileRate(
-      1, Math.ceil(marginBorrowingUsdRate * 10000).toString()
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      1, Math.ceil(marginBorrowingUsdRate * 9999).toString(), true
+    );
+    result = await blContract.userLiquidation(signers[1].address, false);
+    expect(result).to.be.false;
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      1, Math.ceil(marginBorrowingUsdRate * 10000).toString(), true
     );
     result = await blContract.userLiquidation(signers[1].address, false);
     expect(result).to.be.true;
-    result = await blContract.liquidationTime(signers[1].address);
+    result = await blContract.getUserLiquidationTime(signers[1].address);
     expect(Number(result)).to.equal(0);
 
-    const borrowedUsdAmount2 = Number(ethers.utils.formatUnits(
-      await blContract.getBorrowedUsdAmount(signers[1].address), 22
-    ));
     await blContract.connect(signers[7]).addFlagForLiquidation(signers[1].address);
-    result = await blContract.liquidationTime(signers[1].address);
+    result = await blContract.getUserLiquidationTime(signers[1].address);
     expect(Number(result)).to.be.greaterThan(0);
 
-    const borrowedUsdAmount3 = Number(ethers.utils.formatUnits(
+    borrowedUsdAmountS1 = Number(ethers.utils.formatUnits(
       await blContract.getBorrowedUsdAmount(signers[1].address), 22
     ));
-    const shouldBeCollateralUsdAmount = borrowedUsdAmount3 * (
-      1 + collateral1LiquidationFactor + liquidationFlagMargin
-    );
-    const toBeAddedCollateralUsdAmount = shouldBeCollateralUsdAmount - collateral1UsdAmount;
-    const toBeAddedCollateralAmount = toBeAddedCollateralUsdAmount / collateral1UsdRate;
+
     const shouldBeBorrowingUsdAmount = collateral1UsdAmount / (
       1 + collateral1LiquidationFactor + liquidationFlagMargin
     );
-    const toBeReturnedBorrowingUsdAmount = borrowedUsdAmount3 - shouldBeBorrowingUsdAmount;
+
+    const toBeReturnedBorrowingUsdAmount = borrowedUsdAmountS1 - shouldBeBorrowingUsdAmount;
     const toBeReturnedBorrowingAmount = toBeReturnedBorrowingUsdAmount / marginBorrowingUsdRate;
 
     await blContract.connect(signers[1]).returnBorrowing(
       1, ethers.utils.parseUnits((toBeReturnedBorrowingAmount * 0.99).toString())
     );
 
-    result = await blContract.liquidationTime(signers[1].address);
+    result = await blContract.getUserLiquidationTime(signers[1].address);
     expect(Number(result)).to.be.greaterThan(0);
 
     await blContract.connect(signers[1]).returnBorrowing(
       1, ethers.utils.parseUnits((toBeReturnedBorrowingAmount * 0.011).toString())
     );
 
-    result = await blContract.liquidationTime(signers[1].address);
+    result = await blContract.getUserLiquidationTime(signers[1].address);
     expect(Number(result)).to.equal(0);
   });
 
@@ -1321,19 +1345,19 @@ describe("Testing contract", function () {
       collateral1UsdAmount / (1 + collateral1LiquidationFactor);
     const marginBorrowingUsdRate = marginBorrowingUsdAmount / borrowedUsdAmount1;
 
-    await blContract.connect(signers[9]).setBorrowingProfileRate(
-      1, Math.ceil(marginBorrowingUsdRate * 10000).toString()
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      1, Math.ceil(marginBorrowingUsdRate * 10000).toString(), true
     );
     result = await blContract.userLiquidation(signers[1].address, false);
     expect(result).to.be.true;
-    result = await blContract.liquidationTime(signers[1].address);
+    result = await blContract.getUserLiquidationTime(signers[1].address);
     expect(Number(result)).to.equal(0);
 
     const borrowedUsdAmount2 = Number(ethers.utils.formatUnits(
       await blContract.getBorrowedUsdAmount(signers[1].address), 22
     ));
     await blContract.connect(signers[7]).addFlagForLiquidation(signers[1].address);
-    result = await blContract.liquidationTime(signers[1].address);
+    result = await blContract.getUserLiquidationTime(signers[1].address);
     expect(Number(result)).to.be.greaterThan(0);
 
     const borrowedUsdAmount3 = Number(ethers.utils.formatUnits(
@@ -1354,14 +1378,14 @@ describe("Testing contract", function () {
       1, ethers.utils.parseUnits((toBeAddedCollateralAmount * 0.99).toString())
     );
 
-    result = await blContract.liquidationTime(signers[1].address);
+    result = await blContract.getUserLiquidationTime(signers[1].address);
     expect(Number(result)).to.be.greaterThan(0);
 
     await blContract.connect(signers[1]).depositCollateral(
       1, ethers.utils.parseUnits((toBeAddedCollateralAmount * 0.011).toString())
     );
 
-    result = await blContract.liquidationTime(signers[1].address);
+    result = await blContract.getUserLiquidationTime(signers[1].address);
     expect(Number(result)).to.equal(0);
   });
 
@@ -1453,21 +1477,21 @@ describe("Testing contract", function () {
     result = await blContract.userLiquidation(signers[2].address, false);
     expect(result).to.be.false;
 
-    await blContract.connect(signers[9]).setBorrowingProfileRate(
-      1, Math.floor(marginBorrowingUsdRate).toString()
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      1, Math.floor(marginBorrowingUsdRate).toString(), true
     );
-    await blContract.connect(signers[9]).setBorrowingProfileRate(
-      2, Math.floor(marginBorrowingUsdRate).toString()
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      2, Math.floor(marginBorrowingUsdRate).toString(), true
     );
 
     result = await blContract.userLiquidation(signers[1].address, false);
     expect(result).to.be.false;
 
-    await blContract.connect(signers[9]).setBorrowingProfileRate(
-      1, Math.ceil(marginBorrowingUsdRate).toString()
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      1, Math.ceil(marginBorrowingUsdRate).toString(), true
     );
-    await blContract.connect(signers[9]).setBorrowingProfileRate(
-      2, Math.ceil(marginBorrowingUsdRate).toString()
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      2, Math.ceil(marginBorrowingUsdRate).toString(), true
     );
 
     result = await blContract.userLiquidation(signers[1].address, false);
@@ -1630,21 +1654,21 @@ describe("Testing contract", function () {
 
     const marginBorrowingUsdRate = marginBorrowingUsdAmount / borrowedUsdAmount * 10000;
 
-    await blContract.connect(signers[9]).setBorrowingProfileRate(
-      1, Math.floor(marginBorrowingUsdRate).toString()
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      1, Math.floor(marginBorrowingUsdRate).toString(), true
     );
-    await blContract.connect(signers[9]).setBorrowingProfileRate(
-      2, Math.floor(marginBorrowingUsdRate).toString()
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      2, Math.floor(marginBorrowingUsdRate).toString(), true
     );
 
     result = await blContract.userLiquidation(signers[1].address, false);
     expect(result).to.be.false;
 
-    await blContract.connect(signers[9]).setBorrowingProfileRate(
-      1, Math.ceil(marginBorrowingUsdRate).toString()
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      1, Math.ceil(marginBorrowingUsdRate).toString(), true
     );
-    await blContract.connect(signers[9]).setBorrowingProfileRate(
-      2, Math.ceil(marginBorrowingUsdRate).toString()
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      2, Math.ceil(marginBorrowingUsdRate).toString(), true
     );
 
     result = await blContract.userLiquidation(signers[1].address, false);
@@ -1768,21 +1792,21 @@ describe("Testing contract", function () {
 
     const marginBorrowingUsdRate = marginBorrowingUsdAmount / borrowedUsdAmount * 10000;
 
-    await blContract.connect(signers[9]).setBorrowingProfileRate(
-      1, Math.floor(marginBorrowingUsdRate).toString()
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      1, Math.floor(marginBorrowingUsdRate).toString(), true
     );
-    await blContract.connect(signers[9]).setBorrowingProfileRate(
-      2, Math.floor(marginBorrowingUsdRate).toString()
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      2, Math.floor(marginBorrowingUsdRate).toString(), true
     );
 
     result = await blContract.userLiquidation(signers[1].address, false);
     expect(result).to.be.false;
 
-    await blContract.connect(signers[9]).setBorrowingProfileRate(
-      1, Math.ceil(marginBorrowingUsdRate).toString()
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      1, Math.ceil(marginBorrowingUsdRate).toString(), true
     );
-    await blContract.connect(signers[9]).setBorrowingProfileRate(
-      2, Math.ceil(marginBorrowingUsdRate).toString()
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      2, Math.ceil(marginBorrowingUsdRate).toString(), true
     );
 
     result = await blContract.userLiquidation(signers[1].address, false);
@@ -2130,7 +2154,7 @@ describe("Testing contract", function () {
       .borrowAvailable(1, false);
 
     await blContract.connect(signers[9])
-      .setBorrowingProfileRate(1, 100000);
+      .setBorrowingProfileData(1, 100000, true);
 
     result = await blContract.userLiquidation(signers[0].address, false);
     expect(result).to.be.true;
@@ -2345,21 +2369,21 @@ describe("Testing contract", function () {
 
     const marginBorrowingUsdRate = marginBorrowingUsdAmount / borrowedUsdAmount * 10000;
 
-    await blContract.connect(signers[9]).setBorrowingProfileRate(
-      1, Math.floor(marginBorrowingUsdRate).toString()
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      1, Math.floor(marginBorrowingUsdRate).toString(), true
     );
-    await blContract.connect(signers[9]).setBorrowingProfileRate(
-      2, Math.floor(marginBorrowingUsdRate).toString()
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      2, Math.floor(marginBorrowingUsdRate).toString(), true
     );
 
     result = await blContract.userLiquidation(signers[1].address, false);
     expect(result).to.be.false;
 
-    await blContract.connect(signers[9]).setBorrowingProfileRate(
-      1, Math.ceil(marginBorrowingUsdRate).toString()
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      1, Math.ceil(marginBorrowingUsdRate).toString(), true
     );
-    await blContract.connect(signers[9]).setBorrowingProfileRate(
-      2, Math.ceil(marginBorrowingUsdRate).toString()
+    await blContract.connect(signers[9]).setBorrowingProfileData(
+      2, Math.ceil(marginBorrowingUsdRate).toString(), true
     );
 
     result = await blContract.userLiquidation(signers[1].address, false);
@@ -2724,20 +2748,23 @@ describe("Testing contract", function () {
     result = await blContract.getBorrowingProfile(1);
     expect(Number(result.usdRate)).to.equal(10000);
     await expect(
-      blContract.connect(signers[8]).setBorrowingProfileRate(1, 2000)
+      blContract.connect(signers[8]).setBorrowingProfileData(1, 2000, true)
     ).to.be.revertedWith('63')
-    await blContract.connect(signers[9]).setBorrowingProfileRate(1, 2000);
+    await blContract.connect(signers[9]).setBorrowingProfileData(1, 2000, true);
     result = await blContract.getBorrowingProfile(1);
     expect(Number(result.usdRate)).to.equal(2000);
 
     result = await blContract.getCollateralProfile(1);
     expect(Number(result.usdRate)).to.equal(5000);
     await expect(
-      blContract.connect(signers[8]).setCollateralProfileRate(1, 2000)
+      blContract.connect(signers[8]).setCollateralProfileData(
+        1,
+        11,
+        22,
+        33,
+        false
+      )
     ).to.be.revertedWith('63')
-    await blContract.connect(signers[9]).setCollateralProfileRate(1, 2000);
-    result = await blContract.getCollateralProfile(1);
-    expect(Number(result.usdRate)).to.equal(2000);
 
     await blContract.connect(signers[0]).depositCollateral(
       1, ethers.utils.parseUnits('1000')
@@ -2774,29 +2801,41 @@ describe("Testing contract", function () {
 
     result = await blContract.getBorrowingProfile(1);
     expect(result.active).to.be.true;
-    await blContract.connect(signers[9]).setBorrowingProfileStatus(1, false);
+    await blContract.connect(signers[9]).setBorrowingProfileData(1, 11, false);
     result = await blContract.getBorrowingProfile(1);
+    expect(Number(result.usdRate)).to.equal(11);
     expect(result.active).to.be.false;
-    await blContract.connect(signers[9]).setBorrowingProfileStatus(1, true);
+    await blContract.connect(signers[9]).setBorrowingProfileData(1, 22, true);
     result = await blContract.getBorrowingProfile(1);
+    expect(Number(result.usdRate)).to.equal(22);
     expect(result.active).to.be.true;
 
     result = await blContract.getCollateralProfile(1);
     expect(result.active).to.be.true;
-    await blContract.connect(signers[9]).setCollateralProfileStatus(1, false);
+    await blContract.connect(signers[9]).setCollateralProfileData(
+      1,
+      11,
+      22,
+      33,
+      false
+    );
     result = await blContract.getCollateralProfile(1);
     expect(result.active).to.be.false;
-    await blContract.connect(signers[9]).setCollateralProfileStatus(1, true);
+    expect(Number(result.usdRate)).to.equal(11);
+    expect(Number(result.borrowingFactor)).to.equal(22);
+    expect(Number(result.liquidationFactor)).to.equal(33);
+    await blContract.connect(signers[9]).setCollateralProfileData(
+      1,
+      collateral1ProfileUsdRate,
+      collateral1ProfileBorrowingFactor,
+      collateral1ProfileLiquidationFactor,
+      true
+    );
     result = await blContract.getCollateralProfile(1);
     expect(result.active).to.be.true;
-
-    await blContract.connect(signers[9]).setCollateralProfileBorrowingFactor(1, 11);
-    result = await blContract.getCollateralProfile(1);
-    expect(Number(result.borrowingFactor)).to.equal(11);
-
-    await blContract.connect(signers[9]).setCollateralProfileLiquidationFactor(1, 22);
-    result = await blContract.getCollateralProfile(1);
-    expect(Number(result.liquidationFactor)).to.equal(22);
+    expect(Number(result.usdRate)).to.equal(collateral1ProfileUsdRate);
+    expect(Number(result.borrowingFactor)).to.equal(collateral1ProfileBorrowingFactor);
+    expect(Number(result.liquidationFactor)).to.equal(collateral1ProfileLiquidationFactor);
 
     await blContract.connect(signers[9]).setAprSettings(
       11, 22, 33, 44, 55
@@ -2812,19 +2851,15 @@ describe("Testing contract", function () {
     result = await blContract.getLockTime();
     expect(Number(result)).to.equal(333);
 
-    await blContract.connect(signers[9]).setLiquidationFee(444);
+    await blContract.connect(signers[9]).setLiquidationData(
+      444, 555, 666, 777
+    );
     result = await blContract.getLiquidationFee();
     expect(Number(result)).to.equal(444);
-
-    await blContract.connect(signers[9]).setLiquidatorPercentage(555);
     result = await blContract.getLiquidatorPercentage();
     expect(Number(result)).to.equal(555);
-
-    await blContract.connect(signers[9]).setLiquidationFlagMargin(666);
     result = await blContract.getLiquidationFlagMargin();
     expect(Number(result)).to.equal(666);
-
-    await blContract.connect(signers[9]).setLiquidationPeriod(777);
     result = await blContract.getLiquidationPeriod();
     expect(Number(result)).to.equal(777);
 

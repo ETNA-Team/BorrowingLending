@@ -30,6 +30,7 @@ contract BorrowingLending is BorrowingContract, LendingContract, LiquidationCont
      * 14 - Amount can not be greater than borrowing amount
      * 15 - This borrowing is liquidated
      * 16 - Borrowing profile is blocked
+     * 16.1 - Sender is not the Borrowing owner
      * collateral.sol
      * 17 - Collateral profile is not found
      * 18 - Collateral profile is blocked
