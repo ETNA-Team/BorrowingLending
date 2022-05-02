@@ -1,24 +1,34 @@
 # Borrowing - Lending platform
-Platform consists of two standalone contracts:
-BorrowingLending, uses files
+Platform consists of fife standalone contracts:
+BorrowingLendingContract, uses files
     borrowing-lending.sol
     admin.sol
     borrowing.sol
     borrowing-fee.sol
-    borrowing-lending.sol
-    collateral.sol
     lending.sol
-    liquidation.sol
     marketing-indexes.sol
     storage.sol
     utils.sol
 
-NftCollateral, uses file
+CollateralWithLiquidationContract, uses files 
+    collateral-with-liquidation.sol
+    utils.sol
+
+NftCollateralContract, uses file
     nft-collateral.sol
 
+RewardPerBlockContract, uses files
+    reward-per-block.sol
+    access-control.sol
+
+Proxy, uses files
+    proxy.sol
+    access-control.sol
 
 Contracts in files
     etna.sol
+    netna.sol
+    lp.sol
     nft_marketplace.sol
     nft_pub.sol
 are for testing purpose only

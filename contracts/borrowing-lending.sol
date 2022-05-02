@@ -2,13 +2,12 @@
 pragma solidity 0.8.0;
 import './borrowing.sol';
 import './lending.sol';
-import './liquidation.sol';
 import './admin.sol';
 
 /**
  * @dev Main BorrowingLending contract
  */
-contract BorrowingLending is BorrowingContract, LendingContract, LiquidationContract, AdminContract {
+contract BorrowingLendingContract is BorrowingContract, LendingContract, AdminContract {
     /**
      * Error messages:
      * borrowing-lending.sol
@@ -52,6 +51,7 @@ contract BorrowingLending is BorrowingContract, LendingContract, LiquidationCont
      * 45 - Borrowing profile is not found
      * 46 - Amount should be greater than zero
      * 47 - Not enough lending amount
+     * 47.1 - This lending can not be withdrawn at the moment
      * 48 - Message sender is flagged for liquidation
      * 49 - Lending is not found
      * 50 - Borrowing profile is not found
@@ -88,36 +88,33 @@ contract BorrowingLending is BorrowingContract, LendingContract, LiquidationCont
      * 77 - caller is not the liquidation manager
      * 78 - caller is not the liquidator
      * 79 - caller is not the nft collateral contract
+     * 791 - caller is not the collateral contract
+     * 792 - caller is not the access vault contract
+     * 793 - Owner address can not be zero
+     * 794 - Amount exceeds contract balance
      * utils.sol
      * 80 - ReentrancyGuard: reentrant call
      * 81 - Token address should not be zero
      * 82 - Not enough contract balance
      */
     constructor (
-        address etnaContractAddress,
         address newOwner,
         uint16 aprBorrowingMin,
         uint16 aprBorrowingMax,
-        uint16 aprBorrowingFix,
+        uint16 aprBorrowingFixed,
         uint16 aprLendingMin,
         uint16 aprLendingMax
     ) {
         require(newOwner != address(0), '1');
-        require(etnaContractAddress != address(0), '2');
         require(aprBorrowingMax >= aprBorrowingMin, '3');
         require(aprLendingMax >= aprLendingMin, '3');
 
         _owner = newOwner;
         _managers[newOwner] = true;
-        _liquidationManager = newOwner;
-        _etnaContract = IERC20(etnaContractAddress);
         _aprBorrowingMin = aprBorrowingMin;
         _aprBorrowingMax = aprBorrowingMax;
-        _aprBorrowingFix = aprBorrowingFix;
+        _aprBorrowingFixed = aprBorrowingFixed;
         _aprLendingMin = aprLendingMin;
         _aprLendingMax = aprLendingMax;
-
-        _noFee[2] = true;
-        _noFee[3] = true;
     }
 }

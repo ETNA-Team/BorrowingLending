@@ -12,44 +12,57 @@ contract MarketingIndexesContract is StorageContract {
     ) internal returns (bool) {
         uint256 borrowingPeriod = block.timestamp
             - _borrowingProfiles[borrowingProfileIndex].borrowingMarketIndexLastTime;
-        uint256 borrowingMarketFactor = _marketIndexShift;
+        uint256 borrowingMarketFactor = SHIFT;
         if (_borrowingProfiles[borrowingProfileIndex].totalLent > 0) {
-            borrowingMarketFactor += _marketIndexShift * getBorrowingApr(borrowingProfileIndex)
-            * borrowingPeriod / _percentShift / _year;
+            borrowingMarketFactor += SHIFT * getBorrowingApr(borrowingProfileIndex)
+            * borrowingPeriod / DECIMALS / YEAR;
         }
         _borrowingProfiles[borrowingProfileIndex].borrowingMarketIndex *= borrowingMarketFactor;
-        _borrowingProfiles[borrowingProfileIndex].borrowingMarketIndex /= _marketIndexShift;
+        _borrowingProfiles[borrowingProfileIndex].borrowingMarketIndex /= SHIFT;
         _borrowingProfiles[borrowingProfileIndex].borrowingMarketIndexLastTime = block.timestamp;
 
         uint256 lendingPeriod = block.timestamp
             - _borrowingProfiles[borrowingProfileIndex].lendingMarketIndexLastTime;
-        uint256 lendingMarketFactor = _marketIndexShift + (
-            _marketIndexShift * getLendingApr(borrowingProfileIndex)
-            * lendingPeriod / _percentShift / _year
+        uint256 lendingMarketFactor = SHIFT + (
+            SHIFT * getLendingApr(borrowingProfileIndex)
+            * lendingPeriod / DECIMALS / YEAR
         );
 
         _borrowingProfiles[borrowingProfileIndex].lendingMarketIndex *= lendingMarketFactor;
-        _borrowingProfiles[borrowingProfileIndex].lendingMarketIndex /= _marketIndexShift;
+        _borrowingProfiles[borrowingProfileIndex].lendingMarketIndex /= SHIFT;
         _borrowingProfiles[borrowingProfileIndex].lendingMarketIndexLastTime = block.timestamp;
 
+        return true;
+    }
+
+    function setAprSettings (
+        uint16 aprBorrowingMin,
+        uint16 aprBorrowingMax,
+        uint16 aprBorrowingFixed,
+        uint16 aprLendingMin,
+        uint16 aprLendingMax
+    ) external onlyManager returns (bool) {
+        for (uint256 i; i < _borrowingProfilesNumber; i ++) {
+            _proceedMarketingIndexes(i + 1);
+        }
+        _aprBorrowingMin = aprBorrowingMin;
+        _aprBorrowingMax = aprBorrowingMax;
+        _aprBorrowingFixed = aprBorrowingFixed;
+        _aprLendingMin = aprLendingMin;
+        _aprLendingMax = aprLendingMax;
         return true;
     }
 
     function getBorrowingApr (
         uint256 borrowingProfileIndex
     ) public view returns (uint256) {
-        require(
-            _borrowingProfiles[borrowingProfileIndex].totalLent > 0,
-            '60'
-        );
+        if (_borrowingProfiles[borrowingProfileIndex].totalLent == 0) return 0;
         uint256 borrowingPercentage = _borrowingProfiles[borrowingProfileIndex].totalBorrowed
-            * _percentShift
+            * DECIMALS
             / _borrowingProfiles[borrowingProfileIndex].totalLent;
-        require(borrowingPercentage <= 9500,
-            '61'
-        );
+        if (borrowingPercentage > 9500) return _aprBorrowingMax;
         return _aprBorrowingMin + (
-        borrowingPercentage * (_aprBorrowingMax - _aprBorrowingMin) / 9500
+            borrowingPercentage * (_aprBorrowingMax - _aprBorrowingMin) / 9500
         );
     }
 
@@ -57,7 +70,7 @@ contract MarketingIndexesContract is StorageContract {
         uint256 lendingApr = _aprLendingMin;
         if (_borrowingProfiles[borrowingProfileIndex].totalLent > 0) {
             uint256 borrowingPercentage = _borrowingProfiles[borrowingProfileIndex].totalBorrowed
-                * _percentShift
+                * DECIMALS
                 / _borrowingProfiles[borrowingProfileIndex].totalLent;
             if (borrowingPercentage < 9500) {
                 lendingApr = _aprLendingMin + (

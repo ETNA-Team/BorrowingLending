@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.0;
-import 'hardhat/console.sol';
 import './marketing-indexes.sol';
 
 /**
@@ -44,23 +43,11 @@ contract BorrowingFeeContract is MarketingIndexesContract {
             || _borrowings[borrowingIndex].liquidated
         ) return 0;
 
-        uint256 totalCollateralUsdAmount;
-        uint256 feeCollateralUsdAmount;
         address userAddress = _borrowings[borrowingIndex].userAddress;
-        for (uint256 i = 1; i <= _collateralProfilesNumber; i ++) {
-            uint256 collateralIndex = _usersCollateralIndexes[userAddress][i];
-            if (
-                collateralIndex == 0 || _collaterals[collateralIndex].liquidated
-                || _collaterals[collateralIndex].amount == 0
-            ) continue;
-            totalCollateralUsdAmount += _collaterals[collateralIndex].amount
-                * _collateralProfiles[i].usdRate;
-            if (!_noFee[_collateralProfiles[i].collateralType]) {
-                feeCollateralUsdAmount += _collaterals[collateralIndex].amount
-                    * _collateralProfiles[i].usdRate;
-            }
-        }
-        if (feeCollateralUsdAmount == 0) return 0;
+        (uint256 totalCollateralUsdAmount, uint256 feeCollateralUsdAmount) =
+            _collateralContract.getTotalCollateralUsdAmounts(userAddress);
+
+        if (feeCollateralUsdAmount * totalCollateralUsdAmount == 0) return 0;
 
         if (_borrowings[borrowingIndex].fixedApr > 0) {
             return _getFixedFee(borrowingIndex) * feeCollateralUsdAmount
@@ -80,8 +67,8 @@ contract BorrowingFeeContract is MarketingIndexesContract {
         uint256 fee = _borrowings[borrowingIndex].amount
             * _borrowings[borrowingIndex].fixedApr
             * period
-            / _marketIndexShift
-            / _year;
+            / DECIMALS
+            / YEAR;
         return fee;
     }
 
@@ -101,12 +88,12 @@ contract BorrowingFeeContract is MarketingIndexesContract {
         uint256 extraPeriod = block.timestamp - extraPeriodStartTime;
 
         if (extraPeriod > 0) {
-            uint256 marketFactor = _marketIndexShift +
-                _marketIndexShift * getBorrowingApr(
+            uint256 marketFactor = SHIFT +
+                SHIFT * getBorrowingApr(
                     _borrowings[borrowingIndex].borrowingProfileIndex
                 )
-                * extraPeriod / _percentShift / _year;
-            marketIndex = marketIndex * marketFactor / _marketIndexShift;
+                * extraPeriod / DECIMALS / YEAR;
+            marketIndex = marketIndex * marketFactor / SHIFT;
         }
 
         uint256 newAmount = _borrowings[borrowingIndex].amount
@@ -119,7 +106,9 @@ contract BorrowingFeeContract is MarketingIndexesContract {
     /**
      * @dev Helper function for getting amount borrowed by user in USD
      */
-    function getBorrowedUsdAmount (address userAddress) public view returns (uint256) {
+    function getBorrowedUsdAmount (
+        address userAddress
+    ) public view returns (uint256) {
         uint256 borrowedUsdAmount;
         for (uint256 i = 1; i <= _borrowingProfilesNumber; i ++) {
             uint256 borrowingIndex = _usersBorrowingIndexes[userAddress][i];
@@ -141,34 +130,27 @@ contract BorrowingFeeContract is MarketingIndexesContract {
             || _borrowings[borrowingIndex].amount == 0
         ) return 0;
         uint256 borrowingProfileIndex = _borrowings[borrowingIndex].borrowingProfileIndex;
-
-        return (
-            _borrowings[borrowingIndex].amount + _borrowings[borrowingIndex].accumulatedFee
-                + _getBorrowingFee(borrowingIndex)
-        ) * _borrowingProfiles[borrowingProfileIndex].usdRate;
+        return (_borrowings[borrowingIndex].amount + _borrowings[borrowingIndex].accumulatedFee
+                + _getBorrowingFee(borrowingIndex))
+            * getUsdRate(_borrowingProfiles[borrowingProfileIndex].contractAddress)
+            / SHIFT;
     }
 
-    /**
-     * @dev Helper function Checking if user meet requirements for a liquidation
-     */
-    function userLiquidation (
-        address userAddress, bool margin
-    ) public view returns (bool) {
-        uint256 borrowedUsdAmount = getBorrowedUsdAmount(userAddress);
-        if (borrowedUsdAmount == 0) return false;
-        uint256 collateralLiquidationUsdAmount;
-        for (uint256 i = 1; i <= _collateralProfilesNumber; i ++) {
-            uint256 collateralIndex = _usersCollateralIndexes[userAddress][i];
-            if (
-                collateralIndex == 0 || _collaterals[collateralIndex].liquidated
-                || _collaterals[collateralIndex].amount == 0
-            ) continue;
-            uint256 factor = _percentShift + _collateralProfiles[i].liquidationFactor;
-            if (margin) factor += _liquidationFlagMargin;
-            collateralLiquidationUsdAmount += _collaterals[collateralIndex].amount
-                * _collateralProfiles[i].usdRate * _percentShift / factor;
+    function _updateAllBorrowingFees (
+        address userAddress
+    ) internal returns (bool) {
+        for (uint256 i = 1; i <= _borrowingProfilesNumber; i ++) {
+            uint256 borrowingIndex =
+                _usersBorrowingIndexes[userAddress][i];
+            if (borrowingIndex == 0) continue;
+            _updateBorrowingFee(borrowingIndex);
         }
+        return true;
+    }
 
-        return collateralLiquidationUsdAmount <= borrowedUsdAmount;
+    function updateAllBorrowingFees (
+        address userAddress
+    ) external onlyCollateralContract returns (bool) {
+        return _updateAllBorrowingFees(userAddress);
     }
 }

@@ -19,15 +19,6 @@ interface IERC20 {
 }
 
 /**
- * @dev Partial interface of the NftCollateral contract.
- */
-interface INftCollateral {
-    function setToLiquidation (
-        address userAddress
-    ) external returns (bool);
-}
-
-/**
  * @dev Contract module that helps prevent reentrant calls to a function.
  *
  * Inheriting from `ReentrancyGuard` will make the {nonReentrant} modifier

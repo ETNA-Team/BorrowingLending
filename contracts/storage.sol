@@ -3,6 +3,43 @@ pragma solidity 0.8.0;
 import './utils.sol';
 
 /**
+ * @dev Partial interface of the NftCollateral contract.
+ */
+interface ICollateral {
+    function getTotalCollateralUsdAmounts (
+        address userAddress
+    ) external view returns (uint256, uint256);
+
+    function getLiquidationManager () external view returns (address);
+
+    function getUserCollateralUsdAmount (
+        address userAddress,
+        bool borrowingPower
+    ) external view returns (uint256);
+}
+
+/**
+ * @dev Interface of the Proxy contract.
+ */
+interface IProxy {
+    function getUsdRate (
+        address contractAddress
+    ) external view returns (uint256);
+}
+
+/**
+ * @dev Interface of the Proxy contract.
+ */
+interface IReward {
+    function updateRewardData (
+        address userAddress,
+        uint256 profileId,
+        uint256 lent,
+        uint256 totalLent
+    ) external returns (bool);
+}
+
+/**
  * @dev Storage functional for a BorrowingLending contract,
  * functions names are self explanatory
  */
@@ -11,9 +48,11 @@ contract StorageContract is UtilsContract {
         address indexed userAddress, address indexed liquidatorAddress,
         uint256 borrowingIndex, uint256 timestamp
     );
-    event CollateralLiquidation (
-        address indexed userAddress, address indexed liquidatorAddress,
-        uint256 collateralIndex, uint256 timestamp
+    event AccessVaultWithdraw (
+        address tokenAddress,  uint256 amount, uint256 timestamp
+    );
+    event AccessVaultReplenish (
+        address tokenAddress,  uint256 amount, uint256 timestamp
     );
 
     modifier onlyOwner() {
@@ -24,22 +63,17 @@ contract StorageContract is UtilsContract {
         require(_managers[msg.sender], '63');
         _;
     }
-    modifier onlyLiquidationManager() {
-        require(msg.sender == _liquidationManager, '77');
+    modifier onlyCollateralContract() {
+        require(msg.sender == address(_collateralContract), '791');
         _;
     }
-    modifier onlyLiquidator() {
-        require(_liquidators[msg.sender], '78');
-        _;
-    }
-    modifier onlyNftCollateralContract() {
-        require(msg.sender == address(_nftCollateralContract), '79');
+    modifier onlyAccessVault() {
+        require(msg.sender == _accessVault, '792');
         _;
     }
 
     struct BorrowingProfile {
         address contractAddress;
-        uint256 usdRate; // *= 10000
         uint256 borrowingMarketIndex;
         uint256 borrowingMarketIndexLastTime;
         uint256 lendingMarketIndex;
@@ -48,15 +82,6 @@ contract StorageContract is UtilsContract {
         uint256 totalLent;
         uint256 totalLiquidated;
         uint256 totalReturned;
-        bool active;
-    }
-    struct CollateralProfile {
-        address contractAddress;
-        uint256 usdRate; // *= 10000
-        uint256 borrowingFactor;
-        uint256 liquidationFactor;
-        uint256 total;
-        uint8 collateralType; // 0 - native, 1 - erc20, 2 - ETNA, 3 - NETNA
         bool active;
     }
     struct Borrowing {
@@ -69,13 +94,6 @@ contract StorageContract is UtilsContract {
         uint256 fixedApr;
         bool liquidated;
     }
-    struct Collateral {
-        address userAddress;
-        uint256 collateralProfileIndex;
-        uint256 amount;
-        uint256 prevCollateral;
-        bool liquidated;
-    }
     struct Lending {
         address userAddress;
         uint256 borrowingProfileIndex;
@@ -85,111 +103,64 @@ contract StorageContract is UtilsContract {
         uint256 updatedAt; // timestamp, is resettled to block.timestamp when changed
         uint256 accumulatedYield; // used to store reward when changed
     }
+    struct UsdRate {
+        uint256 rate;
+        uint256 updatedAt;
+        bool proxy;
+    }
     mapping (uint256 => BorrowingProfile) internal _borrowingProfiles;
-    mapping (uint256 => CollateralProfile) internal _collateralProfiles;
     mapping (uint256 => Borrowing) internal _borrowings;
     mapping (uint256 => Lending) internal _lendings;
-    mapping (uint256 => Collateral) internal _collaterals;
-    mapping (address => uint256) internal _liquidationTime;
-    mapping (address => bool) internal _liquidators;
+    mapping (address => UsdRate) internal _usdRates;
     mapping (address => bool) internal _managers;
     mapping (address => mapping(uint256 => uint256)) internal _usersBorrowingIndexes;
     // userAddress => borrowingProfileIndex => borrowingIndex
     mapping (address => mapping(uint256 => uint256)) internal _usersLendingIndexes;
     // userAddress => borrowingProfileIndex => lendingIndex
-    mapping (address => mapping(uint256 => uint256)) internal _usersCollateralIndexes;
-    // userAddress => collateralProfileIndex => collateralIndex
-    mapping (address => uint256) internal _adminWithdraw;
-    mapping (address => uint256) internal _adminReplenish;
     mapping (address => bool) internal _isUser;
-    mapping (uint8 => bool) internal _noFee;
 
-    IERC20 internal _etnaContract;
-    IERC20 internal _nEtnaContract;
-    INftCollateral internal _nftCollateralContract;
+    ICollateral internal _collateralContract;
+    IProxy internal _proxyContract;
+    IReward internal _rewardContract;
     address internal _owner;
-    address internal _liquidationManager;
+    address internal _accessVault;
     uint256 internal _totalUsers;
     uint256 internal _borrowingProfilesNumber;
-    uint256 internal _collateralProfilesNumber;
     uint256 internal _borrowingsNumber;
-    uint256 internal _collateralsNumber;
     uint256 internal _lendingsNumber;
-    uint256 internal constant _year = 365 * 24 * 3600;
-    uint256 internal constant _marketIndexShift = 1 ether; // market index exponent shifting when calculation with decimals
-    uint256 internal constant _percentShift = 10000; // percents exponent shifting when calculation with decimals
-    uint256 internal _lockTime = 86400; // period when withdraw lending is prohibited
-    uint256 internal _liquidationFee = 1000; // fee that will be paid for liquidation (% * 100)
-    uint256 internal _liquidatorPercentage = 500;
-    // part of the liquidation fee that will be paid to liquidators (the rest to admin) (% * 100)
-    uint256 internal _liquidationFlagMargin = 1000;
-    // margin that is added to the collateral amount calculation for removing liquidation flag
-    uint256 internal _liquidationPeriod = 86400;
-    // period when user can add Collateral or return borrowing to avoid liquidation
+    uint256 internal constant YEAR = 365 * 24 * 3600;
+    uint256 internal constant SHIFT = 1 ether;
+    // exponent shifting when calculation with decimals for market index and usd rate
+    uint256 internal constant DECIMALS = 10000;
+    // exponent shifting when calculation with decimals for percents
+    uint256 internal _lockTime = 0; // period when withdraw lending is prohibited
     uint16 internal _aprBorrowingMin; // % * 100
     uint16 internal _aprBorrowingMax; // % * 100
-    uint16 internal _aprBorrowingFix; // % * 100
+    uint16 internal _aprBorrowingFixed; // % * 100
     uint16 internal _aprLendingMin; // % * 100
     uint16 internal _aprLendingMax; // % * 100
 
     function addBorrowingProfile (
-        address contractAddress,
-        uint256 usdRate
+        address contractAddress
     ) external onlyManager returns (bool) {
         require(contractAddress != address(0), '64');
         _borrowingProfilesNumber ++;
         _borrowingProfiles[_borrowingProfilesNumber].contractAddress = contractAddress;
-        _borrowingProfiles[_borrowingProfilesNumber].usdRate = usdRate;
-        _borrowingProfiles[_borrowingProfilesNumber].borrowingMarketIndex = _marketIndexShift;
+        _borrowingProfiles[_borrowingProfilesNumber].borrowingMarketIndex = SHIFT;
         _borrowingProfiles[_borrowingProfilesNumber].borrowingMarketIndexLastTime = block.timestamp;
-        _borrowingProfiles[_borrowingProfilesNumber].lendingMarketIndex = _marketIndexShift;
+        _borrowingProfiles[_borrowingProfilesNumber].lendingMarketIndex = SHIFT;
         _borrowingProfiles[_borrowingProfilesNumber].lendingMarketIndexLastTime = block.timestamp;
         _borrowingProfiles[_borrowingProfilesNumber].active = true;
         return true;
     }
 
-    function addCollateralProfile (
-        address contractAddress,
-        uint256 usdRate,
-        uint256 borrowingFactor,
-        uint256 liquidationFactor
-    ) external onlyManager returns (bool) {
-        uint8 collateralType;
-        if (contractAddress == address(0)) collateralType = 0;
-        else if (contractAddress == address(_etnaContract)) collateralType = 2;
-        else if (contractAddress == address(_nEtnaContract)) collateralType = 3;
-        else collateralType = 1;
-        _collateralProfilesNumber ++;
-        _collateralProfiles[_collateralProfilesNumber].contractAddress = contractAddress;
-        _collateralProfiles[_collateralProfilesNumber].usdRate = usdRate;
-        _collateralProfiles[_collateralProfilesNumber].borrowingFactor = borrowingFactor;
-        _collateralProfiles[_collateralProfilesNumber].liquidationFactor = liquidationFactor;
-        _collateralProfiles[_collateralProfilesNumber].collateralType = collateralType;
-        _collateralProfiles[_collateralProfilesNumber].active = true;
-        return true;
-    }
-
-    function setBorrowingProfileData (
+    function setBorrowingProfileStatus (
         uint256 borrowingProfileIndex,
-        uint256 usdRate,
         bool active
     ) external onlyManager returns (bool) {
         require(borrowingProfileIndex > 0 && borrowingProfileIndex <= _borrowingProfilesNumber,
             '65');
-        _borrowingProfiles[borrowingProfileIndex].usdRate = usdRate;
         _borrowingProfiles[borrowingProfileIndex].active = active;
-        return true;
-    }
-
-    /**
-     * @dev Helper function that allows manager to change liquidation status manually
-     */
-    function setCollateralLiquidationStatus (
-        uint256 collateralIndex, bool liquidated
-    ) external onlyManager returns (bool) {
-        require(collateralIndex > 0 && collateralIndex <= _collateralsNumber,
-            '66');
-        _collaterals[collateralIndex].liquidated = liquidated;
         return true;
     }
 
@@ -206,37 +177,6 @@ contract StorageContract is UtilsContract {
         return true;
     }
 
-    function setCollateralProfileData (
-        uint256 collateralProfileIndex,
-        uint256 usdRate,
-        uint256 borrowingFactor,
-        uint256 liquidationFactor,
-        bool active
-    ) external onlyManager returns (bool) {
-        require(collateralProfileIndex > 0 && collateralProfileIndex <= _collateralProfilesNumber,
-            '69');
-        _collateralProfiles[collateralProfileIndex].usdRate = usdRate;
-        _collateralProfiles[collateralProfileIndex].borrowingFactor = borrowingFactor;
-        _collateralProfiles[collateralProfileIndex].liquidationFactor = liquidationFactor;
-        _collateralProfiles[collateralProfileIndex].active = active;
-        return true;
-    }
-
-    function setAprSettings (
-        uint16 aprBorrowingMax,
-        uint16 aprBorrowingMin,
-        uint16 aprBorrowingFix,
-        uint16 aprLendingMax,
-        uint16 aprLendingMin
-    ) external onlyManager returns (bool) {
-        _aprBorrowingMin = aprBorrowingMin;
-        _aprBorrowingMax = aprBorrowingMax;
-        _aprBorrowingFix = aprBorrowingFix;
-        _aprLendingMin = aprLendingMin;
-        _aprLendingMax = aprLendingMax;
-        return true;
-    }
-
     function setLockTime (
         uint256 lockTime
     ) external onlyManager returns (bool) {
@@ -244,73 +184,91 @@ contract StorageContract is UtilsContract {
         return true;
     }
 
-    function setLiquidationData (
-        uint256 liquidationFee,
-        uint256 liquidatorPercentage,
-        uint256 liquidationFlagMargin,
-        uint256 liquidationPeriod
+    function setUsdRateData (
+        address contractAddress,
+        uint256 rate,
+        bool proxy
     ) external onlyManager returns (bool) {
-        _liquidationFee = liquidationFee;
-        _liquidatorPercentage = liquidatorPercentage;
-        _liquidationFlagMargin = liquidationFlagMargin;
-        _liquidationPeriod = liquidationPeriod;
+        _usdRates[contractAddress].rate = rate;
+        _usdRates[contractAddress].proxy = proxy;
+        _usdRates[contractAddress].updatedAt = block.timestamp;
         return true;
     }
 
-    function setEtnaContract (
-        address etnaContractAddress
+    function setCollateralContract (
+        address collateralContractAddress
     ) external onlyManager returns (bool) {
-        require(etnaContractAddress != address(0), '73');
-        _etnaContract = IERC20(etnaContractAddress);
+        require(collateralContractAddress != address(0), '75');
+        _collateralContract = ICollateral(collateralContractAddress);
         return true;
     }
 
-    function setNEtnaContract (
-        address nEtnaContractAddress
+    function setProxyContract (
+        address proxyContractAddress
     ) external onlyManager returns (bool) {
-        require(nEtnaContractAddress != address(0), '74');
-        _nEtnaContract = IERC20(nEtnaContractAddress);
+        _proxyContract = IProxy(proxyContractAddress);
         return true;
     }
 
-    function setNftCollateralContract (
-        address nftCollateralContractAddress
+    function setRewardContract (
+        address rewardContractAddress
     ) external onlyManager returns (bool) {
-        require(nftCollateralContractAddress != address(0), '75');
-        _nftCollateralContract = INftCollateral(nftCollateralContractAddress);
+        _rewardContract = IReward(rewardContractAddress);
+        return true;
+    }
+
+    function setAccessVault (
+        address accessVault
+    ) external onlyManager returns (bool) {
+        _accessVault = accessVault;
+        return true;
+    }
+
+    function accessVaultWithdraw(
+        uint256 borrowingProfileIndex,
+        uint256 amount
+    ) external onlyAccessVault returns (bool) {
+        require(borrowingProfileIndex > 0 && borrowingProfileIndex <= _borrowingProfilesNumber,
+            '65');
+        IERC20 tokenContract = IERC20(
+            _borrowingProfiles[borrowingProfileIndex].contractAddress
+        );
+        require(tokenContract.balanceOf(address(this)) >= amount, '794');
+        _sendAsset(
+            _borrowingProfiles[borrowingProfileIndex].contractAddress,
+            _accessVault,
+            amount
+        );
+        emit AccessVaultWithdraw(
+            _borrowingProfiles[borrowingProfileIndex].contractAddress,
+            amount,
+            block.timestamp
+        );
+        return true;
+    }
+
+    function accessVaultReplenish(
+        uint256 borrowingProfileIndex,
+        uint256 amount
+    ) external onlyAccessVault returns (bool) {
+        require(borrowingProfileIndex > 0 && borrowingProfileIndex <= _borrowingProfilesNumber,
+            '65');
+        _takeAsset(
+            _borrowingProfiles[borrowingProfileIndex].contractAddress,
+            _accessVault,
+            amount
+        );
+        emit AccessVaultReplenish(
+            _borrowingProfiles[borrowingProfileIndex].contractAddress,
+            amount,
+            block.timestamp
+        );
         return true;
     }
 
     function transferOwnership(address newOwner) public onlyOwner returns (bool) {
-        require(newOwner != address(0), 'newOwner should not be zero address');
+        require(newOwner != address(0), '793');
         _owner = newOwner;
-        return true;
-    }
-
-    function setNoFee (uint8 collateralType, bool noFee) external onlyOwner returns (bool) {
-        _noFee[collateralType] = noFee;
-        return true;
-    }
-
-    function addToLiquidators (
-        address userAddress
-    ) external onlyOwner returns (bool) {
-        _liquidators[userAddress] = true;
-        return true;
-    }
-
-    function removeFromLiquidators (
-        address userAddress
-    ) external onlyOwner returns (bool) {
-        _liquidators[userAddress] = false;
-        return true;
-    }
-
-    function setLiquidationManager (
-        address userAddress
-    ) external onlyOwner returns (bool) {
-        require(userAddress != address(0), '76');
-        _liquidationManager = userAddress;
         return true;
     }
 
@@ -325,6 +283,16 @@ contract StorageContract is UtilsContract {
         address userAddress
     ) external onlyOwner returns (bool) {
         _managers[userAddress] = false;
+        return true;
+    }
+
+    function updateUsersList (
+        address userAddress
+    ) external onlyCollateralContract returns (bool) {
+        if (!_isUser[userAddress]) {
+            _totalUsers ++;
+            _isUser[userAddress] = true;
+        }
         return true;
     }
 
@@ -399,46 +367,17 @@ contract StorageContract is UtilsContract {
         );
     }
 
-    function getCollateralsNumber () external view returns (uint256) {
-        return _collateralsNumber;
-    }
-
-    function getCollateral (uint256 collateralIndex) external view returns (
-        address userAddress, uint256 collateralProfileIndex,
-        uint256 amount, uint256 prevCollateral, bool liquidated
-    ) {
-        return (
-            _collaterals[collateralIndex].userAddress,
-            _collaterals[collateralIndex].collateralProfileIndex,
-            _collaterals[collateralIndex].amount,
-            _collaterals[collateralIndex].prevCollateral,
-            _collaterals[collateralIndex].liquidated
-        );
-    }
-
-    function getUsersCollateralIndex (
-        address userAddress, uint256 collateralProfileIndex
-    ) public view returns (uint256) {
-        if (
-            _collaterals[
-            _usersCollateralIndexes[userAddress][collateralProfileIndex]
-            ].liquidated
-        ) return 0;
-        return _usersCollateralIndexes[userAddress][collateralProfileIndex];
-    }
-
     function getBorrowingProfilesNumber () external view returns (uint256) {
         return _borrowingProfilesNumber;
     }
 
     function getBorrowingProfile (uint256 borrowingProfileIndex) external view returns (
-        address contractAddress, uint256 usdRate, uint256 totalBorrowed,
+        address contractAddress, uint256 totalBorrowed,
         uint256 totalLent, uint256 totalLiquidated,
         uint256 totalReturned, bool active
     ) {
         return (
             _borrowingProfiles[borrowingProfileIndex].contractAddress,
-            _borrowingProfiles[borrowingProfileIndex].usdRate,
             _borrowingProfiles[borrowingProfileIndex].totalBorrowed,
             _borrowingProfiles[borrowingProfileIndex].totalLent,
             _borrowingProfiles[borrowingProfileIndex].totalLiquidated,
@@ -461,55 +400,58 @@ contract StorageContract is UtilsContract {
         );
     }
 
-    function getCollateralProfilesNumber () external view returns (uint256) {
-        return _collateralProfilesNumber;
+    function getCollateralContract () external view returns (address) {
+        return address(_collateralContract);
     }
 
-    function getCollateralProfile (uint256 collateralProfileIndex) external view returns (
-        address contractAddress, uint256 usdRate, uint256 borrowingFactor,
-        uint256 liquidationFactor, uint256 total, uint8 collateralType, bool active
+    function getProxyContract () external view returns (address) {
+        return address(_proxyContract);
+    }
+
+    function getRewardContract () external view returns (address) {
+        return address(_rewardContract);
+    }
+
+    function getAccessVault () external view returns (address) {
+        return _accessVault;
+    }
+
+    function getUsdRateData (
+        address contractAddress
+    ) external view returns (
+        uint256 rate, uint256 updatedAt, bool proxy
     ) {
         return (
-            _collateralProfiles[collateralProfileIndex].contractAddress,
-            _collateralProfiles[collateralProfileIndex].usdRate,
-            _collateralProfiles[collateralProfileIndex].borrowingFactor,
-            _collateralProfiles[collateralProfileIndex].liquidationFactor,
-            _collateralProfiles[collateralProfileIndex].total,
-            _collateralProfiles[collateralProfileIndex].collateralType,
-            _collateralProfiles[collateralProfileIndex].active
+            _usdRates[contractAddress].rate,
+            _usdRates[contractAddress].updatedAt,
+            _usdRates[contractAddress].proxy
         );
+    }
+
+    function getUsdRate (
+        address contractAddress
+    ) public view returns (uint256) {
+        if (!_usdRates[contractAddress].proxy) return _usdRates[contractAddress].rate;
+        return _proxyContract.getUsdRate(contractAddress);
     }
 
     function getLockTime () external view returns (uint256) {
         return _lockTime;
     }
 
-    function getLiquidationManager () external view returns (address) {
-        return _liquidationManager;
-    }
-
-    function getLiquidationFee () external view returns (uint256) {
-        return _liquidationFee;
-    }
-
-    function getLiquidatorPercentage () external view returns (uint256) {
-        return _liquidatorPercentage;
-    }
-
-    function getLiquidationFlagMargin () external view returns (uint256) {
-        return _liquidationFlagMargin;
-    }
-
-    function getLiquidationPeriod () external view returns (uint256) {
-        return _liquidationPeriod;
-    }
-
     function getAprSettings () external view returns (
-        uint16 aprBorrowingMax, uint16 aprBorrowingMin, uint16 aprBorrowingFix,
-        uint16 aprLendingMax, uint16 aprLendingMin
+        uint16 aprBorrowingMin,
+        uint16 aprBorrowingMax,
+        uint16 aprBorrowingFixed,
+        uint16 aprLendingMin,
+        uint16 aprLendingMax
     ) {
         return (
-            _aprBorrowingMax, _aprBorrowingMin, _aprBorrowingFix, _aprLendingMax, _aprLendingMin
+            _aprBorrowingMin,
+            _aprBorrowingMax,
+            _aprBorrowingFixed,
+            _aprLendingMin,
+            _aprLendingMax
         );
     }
 
@@ -520,34 +462,10 @@ contract StorageContract is UtilsContract {
         return tokenContract.balanceOf(address(this));
     }
 
-    function getEtnaContract () external view returns (address) {
-        return address(_etnaContract);
-    }
-
-    function getNEtnaContract () external view returns (address) {
-        return address(_nEtnaContract);
-    }
-
-    function getNftCollateralContract () external view returns (address) {
-        return address(_nftCollateralContract);
-    }
-
     function isManager (
         address userAddress
     ) external view returns (bool) {
         return _managers[userAddress];
-    }
-
-    function isLiquidator (
-        address userAddress
-    ) external view returns (bool) {
-        return _liquidators[userAddress];
-    }
-
-    function getUserLiquidationTime (
-        address userAddress
-    ) external view returns (uint256) {
-        return _liquidationTime[userAddress];
     }
 
     function isUser (
@@ -560,19 +478,108 @@ contract StorageContract is UtilsContract {
         return _totalUsers;
     }
 
-    function getNoFee (uint8 collateralType) external view returns (bool) {
-        return _noFee[collateralType];
-    }
-
-    function getAdminReplenish (address tokenAddress) external view returns (uint256) {
-        return _adminReplenish[tokenAddress];
-    }
-
-    function getAdminWithdraw (address tokenAddress) external view returns (uint256) {
-        return _adminWithdraw[tokenAddress];
-    }
-
-    function owner() external view returns (address) {
+    function owner () external view returns (address) {
         return _owner;
+    }
+
+    /**
+    * Migrating borrowing data from another contract
+    * uint256 values collected into a single array "number" with
+    * length 5 times greater than "userAddresses" array
+    * Data in "number" array ordered as follows
+    * 1 borrowingProfileIndexes
+    * 2 amounts
+    * 3 fees
+    * 4 fixedApr
+    * 5 liquidated (if > 0 -> true)
+    */
+    function migrateBorrowings (
+        address[] calldata userAddresses,
+        uint256[] calldata numbers
+    ) external onlyManager returns (bool) {
+        uint256[] memory totalBorrowed = new uint256[](_borrowingProfilesNumber);
+        require(
+            userAddresses.length * 5 == numbers.length,
+            'numbers array length mismatch'
+        );
+        for (uint256 i; i < userAddresses.length; i ++) {
+            if (i > 100) break;
+            if (
+                _usersBorrowingIndexes[userAddresses[i]]
+                    [numbers[i]] > 0
+            ) continue;
+            _borrowingsNumber ++;
+            _borrowings[_borrowingsNumber].userAddress = userAddresses[i];
+            _borrowings[_borrowingsNumber].borrowingProfileIndex =
+                numbers[i];
+            _borrowings[_borrowingsNumber].lastMarketIndex =
+                _borrowingProfiles[numbers[i]].borrowingMarketIndex;
+            _borrowings[_borrowingsNumber].updatedAt = block.timestamp;
+            _borrowings[_borrowingsNumber].amount =
+                numbers[i + userAddresses.length];
+            _borrowings[_borrowingsNumber].accumulatedFee =
+                numbers[i + userAddresses.length * 2];
+            _borrowings[_borrowingsNumber].fixedApr =
+                numbers[i + userAddresses.length * 3];
+            _borrowings[_borrowingsNumber].liquidated =
+                numbers[i + userAddresses.length * 4] > 0;
+            _usersBorrowingIndexes[userAddresses[i]]
+                [numbers[i]] = _borrowingsNumber;
+            totalBorrowed[numbers[i] - 1] += numbers[i + userAddresses.length];
+        }
+        for (uint256 i = 1; i <= _borrowingProfilesNumber; i ++) {
+            if (totalBorrowed[i - 1] == 0) continue;
+            _borrowingProfiles[i].totalBorrowed += totalBorrowed[i - 1];
+        }
+        return true;
+    }
+
+    /**
+    * Migrating lending data from another contract
+    * uint256 values collected into a single array "number" with
+    * length 4 times greater than "userAddresses" array
+    * Data in "number" array ordered as follows
+    * 1 borrowingProfileIndexes
+    * 2 amounts
+    * 3 yields
+    * 4 unlock
+    */
+    function migrateLendings (
+        address[] calldata userAddresses,
+        uint256[] calldata numbers
+    ) external onlyManager returns (bool) {
+        uint256[] memory totalLent = new uint256[](_borrowingProfilesNumber);
+        require(
+            userAddresses.length * 4 == numbers.length,
+            'numbers array length mismatch'
+        );
+        for (uint256 i; i < userAddresses.length; i ++) {
+            if (i > 100) break;
+            if (
+                _usersLendingIndexes[userAddresses[i]]
+                    [numbers[i]] > 0
+            ) continue;
+            _lendingsNumber ++;
+            _lendings[_lendingsNumber].userAddress = userAddresses[i];
+            _lendings[_lendingsNumber].borrowingProfileIndex =
+                numbers[i];
+            _lendings[_lendingsNumber].lastMarketIndex =
+                _borrowingProfiles[numbers[i]].lendingMarketIndex;
+            _lendings[_lendingsNumber].updatedAt = block.timestamp;
+            _lendings[_lendingsNumber].amount =
+                numbers[i + userAddresses.length];
+            _lendings[_lendingsNumber].accumulatedYield =
+                numbers[i + userAddresses.length * 2];
+            _lendings[_lendingsNumber].unlock =
+                numbers[i + userAddresses.length * 3];
+            _usersLendingIndexes[userAddresses[i]]
+                [numbers[i]] = _lendingsNumber;
+            totalLent[numbers[i] - 1] += numbers[i + userAddresses.length];
+        }
+        for (uint256 i = 1; i <= _borrowingProfilesNumber; i ++) {
+            if (totalLent[i - 1] == 0) continue;
+            _borrowingProfiles[i].totalLent += totalLent[i - 1];
+        }
+        return true;
     }
 }
