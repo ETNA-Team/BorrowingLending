@@ -1,5 +1,5 @@
 # Borrowing - Lending platform
-Platform consists of fife standalone contracts:
+Platform consists of five standalone contracts:
 BorrowingLendingContract, uses files
     borrowing-lending.sol
     admin.sol
