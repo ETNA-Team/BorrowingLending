@@ -22,16 +22,22 @@ interface IERC20_LP {
     function getReserves() external view returns (uint112, uint112, uint32);
 }
 
+/*
+ * This contract utilizes usd rate calculation for specific token contract using LP pairs
+ * with possibility of adding external contracts with a new logic for specific tokens
+ */
 contract Proxy is AccessControl {
     struct Rate {
         address externalContractAddress; // possibility to add some new logic if needed
-        address lpAddress;
-        uint256 rate;
-        uint8 rateType;
-        uint8 decimals;
-        uint8 decimals0;
-        uint8 decimals1;
-        bool reverse;
+        address lpAddress; // LP pair contract
+        uint256 rate; // manually set rate (is used if both externalContractAddress and
+        // lpAddress are zero
+        uint8 rateType; // 0 - for a cross rate between token0 and token1
+        // 1, 2 - for a rate between lp token itself and token0 or token1
+        uint8 decimals; // decimals of the token
+        uint8 decimals0; // decimals of token0
+        uint8 decimals1; // decimals of token1
+        bool reverse; // order of the token0 and token1 when rate is calculated
     }
     mapping (address => Rate) internal _usdRates;
     uint256 internal constant SHIFT = 1 ether;
@@ -44,6 +50,9 @@ contract Proxy is AccessControl {
         transferOwnership(newOwner);
     }
 
+    /**
+     * Setting of all necessary data for rate calculation for specific token
+     */
     function setUsdRateData (
         address contractAddress,
         address externalContractAddress,
@@ -66,6 +75,9 @@ contract Proxy is AccessControl {
         return true;
     }
 
+    /**
+     * Getting of rate data set for specific token
+     */
     function getUsdRateData (
         address contractAddress
     ) external view returns (
@@ -84,6 +96,9 @@ contract Proxy is AccessControl {
         );
     }
 
+    /**
+     * Getting of the decimals data for specific token
+     */
     function getUsdRateDecimals (
         address contractAddress
     ) external view returns (
@@ -98,6 +113,12 @@ contract Proxy is AccessControl {
         );
     }
 
+    /**
+     * Getting of the usd rate for specific token. Rate is given using
+     * decimals point shifting. Decimal exponent uses formula
+     * 18 + (18 - token decimals). For example if rate is 1.2 and
+     * token decimals is 6 rate will be 1.2 * 10**30
+     */
     function getUsdRate (
         address contractAddress
     ) external view returns (uint256) {
