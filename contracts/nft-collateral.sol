@@ -230,7 +230,6 @@ contract NftCollateral is IERC721Receiver {
         address userAddress, uint256 depositIndex, uint256[] memory tokenIds
     ) internal returns (uint256) {
         uint256 amount;
-        uint256 tokensNumber;
         for (uint256 i; i < tokenIds.length; i ++) {
             if (i >= _batchLimit) break;
             if (_tokenRegistry[tokenIds[i]] != userAddress) continue;
@@ -243,7 +242,7 @@ contract NftCollateral is IERC721Receiver {
                 _userTokenIndexes[userAddress][_userTokenRegistry[userAddress][index]] = index;
             }
             _userTokenRegistry[userAddress][_deposits[depositIndex].tokensNumber] = 0;
-            tokensNumber ++;
+            _deposits[depositIndex].tokensNumber --;
             _tokenRegistry[tokenIds[i]] = address(0);
 
             _nftContract.safeTransferFrom(
@@ -253,9 +252,6 @@ contract NftCollateral is IERC721Receiver {
             );
         }
         _deposits[depositIndex].amount -= amount;
-        _deposits[depositIndex].tokensNumber -= tokensNumber;
-        _tokensNumber -= tokensNumber;
-
         return amount;
     }
 
@@ -349,8 +345,6 @@ contract NftCollateral is IERC721Receiver {
         _depositsNumber ++;
         _deposits[_depositsNumber].userAddress = userAddress;
         _usersDepositIndex[userAddress] = _depositsNumber;
-        uint256 amount;
-        uint256 tokensNumber;
         for (uint256 i; i < tokenIds.length; i ++) {
             if (i >= _batchLimit) break;
             require (
@@ -358,15 +352,13 @@ contract NftCollateral is IERC721Receiver {
                     'Token Id is already in use'
             );
             _tokenPrice[tokenIds[i]] = prices[i];
-            tokensNumber ++;
-            amount += prices[i];
+            _deposits[_depositsNumber].amount += prices[i];
             _userTokenRegistry[userAddress][i + 1] = tokenIds[i];
             _userTokenIndexes[userAddress][tokenIds[i]] = i + 1;
             _tokenRegistry[tokenIds[i]] = userAddress;
+            _deposits[_depositsNumber].tokensNumber ++;
+            _tokensNumber ++;
         }
-        _deposits[_depositsNumber].tokensNumber = tokensNumber;
-        _tokensNumber += tokensNumber;
-        _deposits[_depositsNumber].amount = amount;
         return true;
     }
 
@@ -418,7 +410,6 @@ contract NftCollateral is IERC721Receiver {
             'User is not at liquidation'
         );
         uint256 depositIndex = _usersDepositIndex[userAddress];
-        uint256 tokensNumber;
         for (uint256 i = 0; i < tokenIds.length; i ++) {
             if (i >= _batchLimit) break;
             if (_tokenRegistry[tokenIds[i]] != userAddress) continue;
@@ -430,7 +421,7 @@ contract NftCollateral is IERC721Receiver {
                 _userTokenIndexes[userAddress][_userTokenRegistry[userAddress][index]] = index;
             }
             _userTokenRegistry[userAddress][_deposits[depositIndex].tokensNumber] = 0;
-            tokensNumber ++;
+            _deposits[depositIndex].tokensNumber --;
             _tokenRegistry[tokenIds[i]] = address(0);
             _nftContract.safeTransferFrom(
                 address(this),
@@ -438,8 +429,7 @@ contract NftCollateral is IERC721Receiver {
                 tokenIds[i]
             );
         }
-        _deposits[depositIndex].tokensNumber -= tokensNumber;
-        _tokensNumber -= tokensNumber;
+
         if (_deposits[depositIndex].tokensNumber == 0) {
             uint256 liquidationIndex = _atLiquidationIndex[userAddress];
             if (liquidationIndex < _atLiquidationNumber) {
@@ -510,6 +500,12 @@ contract NftCollateral is IERC721Receiver {
         address userAddress, uint256 index
     ) external view returns (uint256) {
         return _userTokenRegistry[userAddress][index];
+    }
+
+    function getUserTokenIndexByTokenId (
+        address userAddress, uint256 tokenId
+    ) external view returns (uint256) {
+        return _userTokenIndexes[userAddress][tokenId];
     }
 
     function getCollateralContract () external view returns (address) {
